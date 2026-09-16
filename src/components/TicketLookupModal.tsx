@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { X, Search, Ticket, CheckCircle2, AlertCircle, Shield, Calendar, MapPin, Loader2, AlertTriangle, GraduationCap, FileDown, Image } from 'lucide-react';
 import { downloadTicketPDF, downloadTicketPNG } from '../utils/ticketGenerator';
+import { lookupTicket, sanitizeUserErrorMessage } from '../services/api';
 
 interface TicketLookupModalProps {
   onClose: () => void;
@@ -26,16 +27,16 @@ export const TicketLookupModal: React.FC<TicketLookupModalProps> = ({ onClose })
     setIsLoading(true);
 
     try {
-      const res = await fetch(`/api/attendees/lookup?query=${encodeURIComponent(query.trim())}&verify=${encodeURIComponent(verifyValue.trim())}`);
-      const data = await res.json();
+      const response = await lookupTicket(query, verifyValue);
 
-      if (!res.ok) {
-        throw new Error(data.message || 'No se encontró ninguna inscripción con estos datos.');
+      if (!response.success || !response.attendee) {
+        setErrorMessage(response.message || 'No se encontró ninguna inscripción con estos datos.');
+        return;
       }
 
-      setResult(data.attendee);
+      setResult(response.attendee);
     } catch (err: any) {
-      setErrorMessage(err.message || 'Error al consultar la inscripción.');
+      setErrorMessage(sanitizeUserErrorMessage(err));
     } finally {
       setIsLoading(false);
     }

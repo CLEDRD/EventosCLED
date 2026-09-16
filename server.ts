@@ -21,6 +21,11 @@ const PORT = 3000;
 
 app.use(express.json());
 
+// Health check route for container & AI Studio readiness probes
+app.get('/api/health', (_req: Request, res: Response) => {
+  res.json({ status: 'ok', timestamp: new Date().toISOString() });
+});
+
 // Serve LOGO_CLED_CF.jpg whether uploaded in /public/ or in root
 app.get(['/LOGO_CLED_CF.jpg', '/public/LOGO_CLED_CF.jpg'], (req: Request, res: Response, next) => {
   const publicPath = path.join(process.cwd(), 'public', 'LOGO_CLED_CF.jpg');
@@ -913,9 +918,19 @@ async function startServer() {
     });
   }
 
-  app.listen(PORT, '0.0.0.0', () => {
+  const server = app.listen(PORT, '0.0.0.0', () => {
     console.log(`EventosCLED Server running at http://localhost:${PORT}`);
+  });
+
+  server.on('error', (err: any) => {
+    if (err.code === 'EADDRINUSE') {
+      console.error(`Port ${PORT} is already in use.`);
+    } else {
+      console.error('Server error:', err);
+    }
   });
 }
 
-startServer();
+startServer().catch((err) => {
+  console.error('Failed to start server:', err);
+});

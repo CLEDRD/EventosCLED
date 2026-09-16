@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { X, Lock, Key, AlertCircle, CheckCircle2, ShieldCheck, Loader2 } from 'lucide-react';
 import { CLEDEvent } from '../types';
+import { verifyAccessCode, sanitizeUserErrorMessage } from '../services/api';
 
 interface PrivateEventModalProps {
   event: CLEDEvent;
@@ -29,22 +30,17 @@ export const PrivateEventModal: React.FC<PrivateEventModalProps> = ({
     setIsLoading(true);
 
     try {
-      const res = await fetch(`/api/events/${event.id}/verify-access`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ code: code.trim() }),
-      });
+      const result = await verifyAccessCode(event, code.trim());
 
-      const data = await res.json();
-
-      if (!res.ok) {
-        throw new Error(data.message || 'Código de acceso o invitación no válido.');
+      if (!result.success) {
+        setErrorMessage(result.message || 'Código de acceso o invitación no válido.');
+        return;
       }
 
       // Success: notify parent
       onUnlocked(event);
     } catch (err: any) {
-      setErrorMessage(err.message || 'Error de verificación');
+      setErrorMessage(sanitizeUserErrorMessage(err));
     } finally {
       setIsLoading(false);
     }

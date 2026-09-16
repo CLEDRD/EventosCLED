@@ -1,6 +1,23 @@
 {
-  "adminPin": "cled2026",
-  "events": [],
+  "adminPin": "CLED1906",
+  "events": [
+    {
+      "id": "event-1789524185867-tq9",
+      "title": "Apertura CLED 2K26",
+      "description": "",
+      "category": "Liderazgo Escolar",
+      "date": "2026-09-17",
+      "time": "13:50",
+      "location": "Salón Multiusos, Instituto Politécnico Max Henríquez Ureña",
+      "isVirtual": false,
+      "hasImage": false,
+      "isPublic": true,
+      "capacity": 150,
+      "status": "active",
+      "createdAt": "2026-09-16T02:03:05.95299+00:00",
+      "updatedAt": "2026-09-16T02:03:05.95299+00:00"
+    }
+  ],
   "attendees": [],
   "emails": []
 }

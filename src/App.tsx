@@ -4,6 +4,7 @@ import {
   CheckCircle2, ArrowRight, Video, MapPin, ChevronRight, BookOpen
 } from 'lucide-react';
 import { CLEDEvent, Attendee } from './types';
+import { getEvents } from './services/api';
 import { Navbar } from './components/Navbar';
 import { EventCard } from './components/EventCard';
 import { EventRegistrationModal } from './components/EventRegistrationModal';
@@ -33,15 +34,12 @@ export default function App() {
   // Unlocked private events during current session
   const [unlockedEventIds, setUnlockedEventIds] = useState<string[]>([]);
 
-  // Fetch events from backend API
+  // Fetch events safely
   const fetchEvents = async () => {
     setIsLoadingEvents(true);
     try {
-      const res = await fetch('/api/events');
-      const data = await res.json();
-      if (data.success && Array.isArray(data.events)) {
-        setEvents(data.events);
-      }
+      const loadedEvents = await getEvents();
+      setEvents(loadedEvents);
     } catch (err) {
       console.error('Error cargando eventos:', err);
     } finally {

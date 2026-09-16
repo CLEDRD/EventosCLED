@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { X, AlertTriangle, CheckCircle2, User, Mail, Phone, BookOpen, GraduationCap, Lock, Loader2, AlertCircle, Info } from 'lucide-react';
 import { CLEDEvent } from '../types';
 import { checkProfanity, VALID_GRADES, VALID_SECTIONS_3RO, VALID_SECTIONS_OTHER, VALID_TECHNICAL_MAJORS } from '../utils/security';
+import { registerAttendee, sanitizeUserErrorMessage } from '../services/api';
 
 interface EventRegistrationModalProps {
   event: CLEDEvent;
@@ -126,33 +127,26 @@ export const EventRegistrationModal: React.FC<EventRegistrationModalProps> = ({
     setIsLoading(true);
 
     try {
-      const response = await fetch(`/api/events/${event.id}/register`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          firstName: formData.firstName.trim(),
-          lastName: formData.lastName.trim(),
-          grade: formData.grade,
-          section: formData.section,
-          technicalMajor: formData.grade === '3ro' ? undefined : formData.technicalMajor,
-          phone: formData.phone.trim(),
-          email: formData.email.trim(),
-          accessCode: formData.accessCode,
-        }),
+      const result = await registerAttendee(event, {
+        firstName: formData.firstName.trim(),
+        lastName: formData.lastName.trim(),
+        grade: formData.grade,
+        section: formData.section,
+        technicalMajor: formData.grade === '3ro' ? undefined : formData.technicalMajor,
+        phone: formData.phone.trim(),
+        email: formData.email.trim(),
+        accessCode: formData.accessCode,
       });
 
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.message || 'Error al procesar la inscripción');
+      if (!result.success || !result.attendee) {
+        setErrorMessage(result.message || 'No se pudo completar la inscripción.');
+        return;
       }
 
       // Success
-      onSuccess(data.attendee);
+      onSuccess(result.attendee);
     } catch (err: any) {
-      setErrorMessage(err.message || 'Error de conexión con el servidor de inscripciones.');
+      setErrorMessage(sanitizeUserErrorMessage(err));
     } finally {
       setIsLoading(false);
     }
