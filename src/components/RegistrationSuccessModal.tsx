@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import confetti from 'canvas-confetti';
-import { CheckCircle2, Calendar, Shield, X, AlertTriangle, Check, FileDown, Image, Loader2 } from 'lucide-react';
+import { CheckCircle2, Calendar, X, AlertTriangle, Check, FileDown, Image, Loader2 } from 'lucide-react';
 import { downloadTicketPDF, downloadTicketPNG } from '../utils/ticketGenerator';
+import { CLED_LOGO } from '../utils/logo';
 
 interface RegistrationSuccessModalProps {
   attendee: {
@@ -112,9 +113,9 @@ export const RegistrationSuccessModal: React.FC<RegistrationSuccessModalProps> =
         {/* Digital Ticket Card */}
         <div className="p-6 bg-slate-50">
           <div className="bg-gradient-to-b from-slate-900 via-blue-950 to-slate-900 text-white rounded-xl p-5 shadow-lg border border-blue-900/60 relative overflow-hidden">
-            {/* Watermark seal */}
-            <div className="absolute -right-6 -bottom-6 w-32 h-32 rounded-full border-4 border-blue-500/10 pointer-events-none flex items-center justify-center">
-              <Shield className="w-20 h-20 text-blue-500/10" />
+            {/* Watermark seal with official CLED logo */}
+            <div className="absolute -right-6 -bottom-6 w-32 h-32 rounded-full border-4 border-blue-500/10 pointer-events-none flex items-center justify-center overflow-hidden">
+              <img src={CLED_LOGO} alt="" className="w-24 h-24 object-contain opacity-15" />
             </div>
 
             {/* Credential Header */}
@@ -122,18 +123,10 @@ export const RegistrationSuccessModal: React.FC<RegistrationSuccessModalProps> =
               <div className="flex items-center gap-2">
                 <div className="w-7 h-7 rounded-lg bg-white p-0.5 flex items-center justify-center overflow-hidden">
                   <img
-                    src="/LOGO_CLED_CF.jpg"
+                    src={CLED_LOGO}
                     alt="Logo CLED"
                     className="w-full h-full object-contain"
-                    onError={(e) => {
-                      (e.currentTarget as HTMLElement).style.display = 'none';
-                      const fb = e.currentTarget.parentElement?.querySelector('.ticket-logo-fallback') as HTMLElement;
-                      if (fb) fb.style.display = 'flex';
-                    }}
                   />
-                  <div className="ticket-logo-fallback hidden w-full h-full bg-blue-600 rounded flex items-center justify-center">
-                    <Shield className="w-3.5 h-3.5 text-white" />
-                  </div>
                 </div>
                 <span className="text-[11px] font-bold tracking-wider uppercase text-blue-300">
                   EventosCLED • IPMHU Boleta Oficial

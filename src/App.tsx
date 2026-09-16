@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import {
-  Shield, Calendar, Users, Award, Search, Sparkles, Filter, Lock,
+  Calendar, Users, Award, Search, Sparkles, Filter, Lock,
   CheckCircle2, ArrowRight, Video, MapPin, ChevronRight, BookOpen
 } from 'lucide-react';
 import { CLEDEvent, Attendee } from './types';
@@ -119,9 +119,8 @@ export default function App() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
           <div className="max-w-3xl">
             {/* Top Institutional Badge */}
-            <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-blue-100/80 border border-blue-200/80 text-blue-900 text-xs font-bold uppercase tracking-wider mb-5 shadow-xs">
-              <Shield className="w-4 h-4 text-blue-700" />
-              <span>Instituto Politécnico Max Henríquez Ureña • CLED</span>
+            <div className="inline-flex items-center px-3.5 py-1.5 rounded-full bg-blue-100/80 border border-blue-200/80 text-blue-900 text-xs font-bold uppercase tracking-wider mb-5 shadow-xs">
+              <span>Instituto Politécnico Max Henríquez Ureña</span>
             </div>
 
             {/* Main Headline */}

@@ -53,7 +53,7 @@ export const TicketLookupModal: React.FC<TicketLookupModalProps> = ({ onClose })
             </div>
             <div>
               <h3 className="font-bold text-base text-white">Consultar Boleta / Inscripción</h3>
-              <p className="text-xs text-blue-200/80">Instituto Politécnico Max Henríquez Ureña • CLED</p>
+              <p className="text-xs text-blue-200/80">Instituto Politécnico Max Henríquez Ureña</p>
             </div>
           </div>
           <button

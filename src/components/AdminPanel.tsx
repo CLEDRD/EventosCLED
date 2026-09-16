@@ -8,6 +8,7 @@ import {
 import { CLEDEvent, Attendee, EmailLog, EventStats } from '../types';
 import { exportAttendanceToExcel, exportAttendanceToPDF } from '../utils/reports';
 import { checkProfanity, VALID_GRADES, VALID_SECTIONS_3RO, VALID_SECTIONS_OTHER, VALID_TECHNICAL_MAJORS } from '../utils/security';
+import { CLED_LOGO } from '../utils/logo';
 
 interface AdminPanelProps {
   events: CLEDEvent[];
@@ -391,18 +392,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
             </button>
             <div className="w-16 h-16 bg-white rounded-2xl border border-white/40 flex items-center justify-center mx-auto mb-3 p-1 overflow-hidden shadow-sm">
               <img
-                src="/LOGO_CLED_CF.jpg"
+                src={CLED_LOGO}
                 alt="Logo CLED"
                 className="w-full h-full object-contain"
-                onError={(e) => {
-                  (e.currentTarget as HTMLElement).style.display = 'none';
-                  const fb = e.currentTarget.parentElement?.querySelector('.admin-login-logo-fb') as HTMLElement;
-                  if (fb) fb.style.display = 'flex';
-                }}
               />
-              <div className="admin-login-logo-fb hidden w-full h-full bg-blue-800 rounded-xl items-center justify-center text-white">
-                <Shield className="w-7 h-7" />
-              </div>
             </div>
             <h2 className="text-xl font-bold tracking-tight text-white">
               Panel Administrativo CLED
@@ -474,18 +467,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
           <div className="flex items-center gap-3">
             <div className="w-11 h-11 rounded-xl bg-white border border-white/40 flex items-center justify-center p-0.5 overflow-hidden shadow-xs">
               <img
-                src="/LOGO_CLED_CF.jpg"
+                src={CLED_LOGO}
                 alt="Logo CLED"
                 className="w-full h-full object-contain"
-                onError={(e) => {
-                  (e.currentTarget as HTMLElement).style.display = 'none';
-                  const fb = e.currentTarget.parentElement?.querySelector('.admin-header-logo-fb') as HTMLElement;
-                  if (fb) fb.style.display = 'flex';
-                }}
               />
-              <div className="admin-header-logo-fb hidden w-full h-full bg-blue-800 rounded-lg items-center justify-center text-white">
-                <Shield className="w-5 h-5" />
-              </div>
             </div>
             <div>
               <div className="flex items-center gap-2">

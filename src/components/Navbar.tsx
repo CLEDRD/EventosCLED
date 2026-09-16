@@ -1,5 +1,6 @@
 import React from 'react';
-import { Shield, Sparkles, Calendar, Search, Ticket, Lock } from 'lucide-react';
+import { Sparkles, Calendar, Search, Ticket, Lock } from 'lucide-react';
+import { CLED_LOGO } from '../utils/logo';
 
 interface NavbarProps {
   onOpenLookup: () => void;
@@ -38,18 +39,11 @@ export const Navbar: React.FC<NavbarProps> = ({
           <div className="flex items-center gap-3">
             <div className="w-11 h-11 rounded-xl bg-white border border-slate-200 shadow-xs flex items-center justify-center p-0.5 overflow-hidden">
               <img
-                src="/LOGO_CLED_CF.jpg"
+                src={CLED_LOGO}
                 alt="Logo CLED"
                 className="w-full h-full object-contain"
-                onError={(e) => {
-                  (e.currentTarget as HTMLElement).style.display = 'none';
-                  const fb = e.currentTarget.parentElement?.querySelector('.nav-logo-fallback') as HTMLElement;
-                  if (fb) fb.style.display = 'flex';
-                }}
+                loading="eager"
               />
-              <div className="nav-logo-fallback hidden w-full h-full bg-blue-800 text-white rounded-lg items-center justify-center">
-                <Shield className="w-5 h-5 text-blue-100" />
-              </div>
             </div>
             <div>
               <div className="flex items-center gap-2">

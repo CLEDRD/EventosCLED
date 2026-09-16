@@ -1,5 +1,6 @@
 import React from 'react';
-import { Shield, Lock, Award, Heart, Mail, Instagram, MapPin, Sparkles } from 'lucide-react';
+import { Lock, Award, Heart, Mail, Instagram, MapPin, Sparkles } from 'lucide-react';
+import { CLED_LOGO } from '../utils/logo';
 
 interface FooterProps {
   onOpenAdmin: () => void;
@@ -17,18 +18,11 @@ export const Footer: React.FC<FooterProps> = ({ onOpenAdmin }) => {
             <div className="flex items-center gap-3">
               <div className="w-11 h-11 rounded-xl bg-white border border-slate-200 shadow-xs flex items-center justify-center p-0.5 overflow-hidden">
                 <img
-                  src="/LOGO_CLED_CF.jpg"
+                  src={CLED_LOGO}
                   alt="Logo CLED"
                   className="w-full h-full object-contain"
-                  onError={(e) => {
-                    (e.currentTarget as HTMLElement).style.display = 'none';
-                    const fb = e.currentTarget.parentElement?.querySelector('.footer-logo-fallback') as HTMLElement;
-                    if (fb) fb.style.display = 'flex';
-                  }}
+                  loading="lazy"
                 />
-                <div className="footer-logo-fallback hidden w-full h-full bg-blue-800 text-white rounded-lg items-center justify-center">
-                  <Shield className="w-5 h-5 text-blue-100" />
-                </div>
               </div>
               <div>
                 <span className="text-lg font-extrabold text-slate-900 tracking-tight">
