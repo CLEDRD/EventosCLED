@@ -356,6 +356,22 @@ app.get('/api/events', async (req: Request, res: Response) => {
   });
 });
 
+// 1b. Get attendee counts per event
+app.get('/api/events/counts', async (req: Request, res: Response) => {
+  try {
+    const attendees = await fetchAllAttendees();
+    const counts: { [id: string]: number } = {};
+    attendees.forEach(a => {
+      if (a.eventId) {
+        counts[a.eventId] = (counts[a.eventId] || 0) + 1;
+      }
+    });
+    res.json({ success: true, counts });
+  } catch (err: any) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
 // 2. Get single event
 app.get('/api/events/:id', async (req: Request, res: Response) => {
   const event = await fetchEventById(req.params.id);

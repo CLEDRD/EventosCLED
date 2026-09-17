@@ -1,5 +1,5 @@
 import { CLEDEvent, Attendee } from '../types';
-import { supabase, eventFromRow, attendeeFromRow, attendeeToRow } from '../lib/supabase';
+import { supabase, eventFromRow, eventToRow, attendeeFromRow, attendeeToRow, emailLogFromRow } from '../lib/supabase';
 
 // Initial fallback event if both backend API and Supabase network fail
 const FALLBACK_EVENTS: CLEDEvent[] = [
@@ -392,3 +392,414 @@ export async function verifyAccessCode(
     message: 'Código de invitación no válido.'
   };
 }
+
+/**
+ * Fetches attendees for an event or all attendees.
+ * Tries the backend API first; falls back directly to Supabase (essential for GitHub Pages static hosting).
+ */
+export async function getAttendees(eventId?: string, adminToken?: string): Promise<Attendee[]> {
+  // 1. Try backend API first if token is available
+  if (adminToken) {
+    const queryParam = eventId ? `?eventId=${encodeURIComponent(eventId)}` : '';
+    const apiResult = await safeFetchJson<{ attendees: Attendee[] }>(`/api/admin/attendees${queryParam}`, {
+      headers: { 'x-admin-token': adminToken }
+    });
+    if (apiResult.ok && apiResult.data?.attendees && Array.isArray(apiResult.data.attendees)) {
+      return apiResult.data.attendees;
+    }
+  }
+
+  // 2. Direct Supabase query (works seamlessly on GitHub Pages static deployment)
+  if (supabase) {
+    try {
+      let query = supabase.from('attendees').select('*').order('registered_at', { ascending: false });
+      if (eventId && eventId !== 'all') {
+        query = query.eq('event_id', eventId);
+      }
+      const { data, error } = await query;
+      if (!error && data) {
+        return data.map(attendeeFromRow);
+      }
+      if (error) {
+        console.warn('Supabase getAttendees query error:', error);
+      }
+    } catch (err) {
+      console.warn('Supabase getAttendees error:', err);
+    }
+  }
+
+  return [];
+}
+
+/**
+ * Toggles attendance check-in for an attendee.
+ * Tries backend API first; falls back directly to Supabase for GitHub Pages.
+ */
+export async function toggleAttendeeAttendance(
+  attendee: Attendee,
+  adminToken?: string
+): Promise<{ success: boolean; attendee?: Attendee; message?: string }> {
+  // 1. Try backend API
+  if (adminToken) {
+    const apiResult = await safeFetchJson<{ success: boolean; attendee: Attendee }>(
+      `/api/admin/attendees/${attendee.id}/toggle-attendance`,
+      {
+        method: 'POST',
+        headers: { 'x-admin-token': adminToken }
+      }
+    );
+    if (apiResult.ok && apiResult.data?.attendee) {
+      return { success: true, attendee: apiResult.data.attendee };
+    }
+  }
+
+  // 2. Direct Supabase update
+  if (supabase) {
+    try {
+      const newStatus = !attendee.attended;
+      const nowIso = new Date().toISOString();
+      const { data, error } = await supabase
+        .from('attendees')
+        .update({
+          attended: newStatus,
+          attended_at: newStatus ? nowIso : null
+        })
+        .eq('id', attendee.id)
+        .select()
+        .single();
+
+      if (!error && data) {
+        return { success: true, attendee: attendeeFromRow(data) };
+      }
+      if (error) {
+        return { success: false, message: error.message };
+      }
+    } catch (err) {
+      return { success: false, message: sanitizeUserErrorMessage(err) };
+    }
+  }
+
+  return { success: false, message: 'No se pudo actualizar la asistencia.' };
+}
+
+/**
+ * Deletes an attendee record.
+ * Tries backend API first; falls back directly to Supabase for GitHub Pages.
+ */
+export async function deleteAttendeeRecord(
+  attendeeId: string,
+  adminToken?: string
+): Promise<{ success: boolean; message?: string }> {
+  if (adminToken) {
+    const apiResult = await safeFetchJson(`/api/admin/attendees/${attendeeId}`, {
+      method: 'DELETE',
+      headers: { 'x-admin-token': adminToken }
+    });
+    if (apiResult.ok) {
+      return { success: true };
+    }
+  }
+
+  if (supabase) {
+    try {
+      const { error } = await supabase.from('attendees').delete().eq('id', attendeeId);
+      if (!error) {
+        return { success: true };
+      }
+      return { success: false, message: error.message };
+    } catch (err) {
+      return { success: false, message: sanitizeUserErrorMessage(err) };
+    }
+  }
+
+  return { success: false, message: 'No se pudo eliminar el registro.' };
+}
+
+/**
+ * Saves (creates or updates) an event record.
+ * Tries backend API first; falls back directly to Supabase for GitHub Pages.
+ */
+export async function saveEventRecord(
+  eventData: Partial<CLEDEvent>,
+  isEditing: boolean,
+  editingId?: string,
+  adminToken?: string
+): Promise<{ success: boolean; event?: CLEDEvent; message?: string }> {
+  if (adminToken) {
+    const url = isEditing && editingId ? `/api/events/${editingId}` : '/api/events';
+    const method = isEditing ? 'PUT' : 'POST';
+    const apiResult = await safeFetchJson<{ success: boolean; event: CLEDEvent }>(url, {
+      method,
+      headers: {
+        'Content-Type': 'application/json',
+        'x-admin-token': adminToken
+      },
+      body: JSON.stringify(eventData)
+    });
+    if (apiResult.ok && apiResult.data?.event) {
+      return { success: true, event: apiResult.data.event };
+    }
+  }
+
+  if (supabase) {
+    try {
+      const nowIso = new Date().toISOString();
+      const eventToSave: CLEDEvent = {
+        id: (isEditing && editingId) ? editingId : (eventData.id || `event-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`),
+        title: eventData.title || 'Evento CLED',
+        description: eventData.description || '',
+        category: eventData.category || 'General',
+        date: eventData.date || new Date().toISOString().split('T')[0],
+        time: eventData.time || '09:00',
+        location: eventData.location || 'Salón Multiusos, IPMHU',
+        isVirtual: Boolean(eventData.isVirtual),
+        virtualLink: eventData.virtualLink || undefined,
+        hasImage: Boolean(eventData.hasImage),
+        imageUrl: eventData.imageUrl || undefined,
+        isPublic: eventData.isPublic !== undefined ? eventData.isPublic : true,
+        accessCode: eventData.accessCode || undefined,
+        capacity: Number(eventData.capacity) || 150,
+        status: eventData.status || 'active',
+        speaker: eventData.speaker || undefined,
+        speakerRole: eventData.speakerRole || undefined,
+        createdAt: eventData.createdAt || nowIso,
+        updatedAt: nowIso
+      };
+
+      const row = eventToRow(eventToSave);
+      const { data, error } = await supabase.from('events').upsert(row).select().single();
+      if (!error && data) {
+        return { success: true, event: eventFromRow(data) };
+      }
+      if (error) {
+        return { success: false, message: error.message };
+      }
+    } catch (err) {
+      return { success: false, message: sanitizeUserErrorMessage(err) };
+    }
+  }
+
+  return { success: false, message: 'No se pudo guardar el evento.' };
+}
+
+/**
+ * Deletes an event and its attendees.
+ * Tries backend API first; falls back directly to Supabase for GitHub Pages.
+ */
+export async function deleteEventRecord(
+  eventId: string,
+  adminToken?: string
+): Promise<{ success: boolean; message?: string }> {
+  if (adminToken) {
+    const apiResult = await safeFetchJson(`/api/events/${eventId}`, {
+      method: 'DELETE',
+      headers: { 'x-admin-token': adminToken }
+    });
+    if (apiResult.ok) {
+      return { success: true };
+    }
+  }
+
+  if (supabase) {
+    try {
+      await supabase.from('attendees').delete().eq('event_id', eventId);
+      const { error } = await supabase.from('events').delete().eq('id', eventId);
+      if (!error) {
+        return { success: true };
+      }
+      return { success: false, message: error.message };
+    } catch (err) {
+      return { success: false, message: sanitizeUserErrorMessage(err) };
+    }
+  }
+
+  return { success: false, message: 'No se pudo eliminar el evento.' };
+}
+
+/**
+ * Computes or retrieves admin dashboard statistics.
+ * Tries backend API first; computes directly from Supabase for GitHub Pages.
+ */
+export async function getAdminStats(
+  adminToken?: string
+): Promise<{ stats: any; emails?: any[]; events?: CLEDEvent[] }> {
+  if (adminToken) {
+    const apiResult = await safeFetchJson<{ stats: any; emails?: any[]; events?: CLEDEvent[] }>('/api/admin/stats', {
+      headers: { 'x-admin-token': adminToken }
+    });
+    if (apiResult.ok && apiResult.data?.stats) {
+      return apiResult.data;
+    }
+  }
+
+  if (supabase) {
+    try {
+      const [eventsRes, attendeesRes, emailsRes] = await Promise.all([
+        supabase.from('events').select('*').order('date', { ascending: true }),
+        supabase.from('attendees').select('*'),
+        supabase.from('email_logs').select('*').order('sent_at', { ascending: false }).limit(50)
+      ]);
+
+      const events: CLEDEvent[] = (eventsRes.data || []).map(eventFromRow);
+      const attendees: Attendee[] = (attendeesRes.data || []).map(attendeeFromRow);
+      const emails = (emailsRes.data || []).map(emailLogFromRow);
+
+      const totalEvents = events.length;
+      const totalAttendees = attendees.length;
+      const checkedInAttendees = attendees.filter(a => a.attended).length;
+      const pendingCheckIn = totalAttendees - checkedInAttendees;
+
+      const attendeesByGrade: { [key: string]: number } = {};
+      const attendeesByMajor: { [key: string]: number } = {};
+      const attendeesBySection: { [key: string]: number } = {};
+
+      attendees.forEach(a => {
+        const gradeKey = a.grade || 'Sin especificar';
+        attendeesByGrade[gradeKey] = (attendeesByGrade[gradeKey] || 0) + 1;
+
+        const majorKey = a.technicalMajor || (a.grade === '3ro' ? 'Ciclo General' : 'Secundaria Técnica');
+        attendeesByMajor[majorKey] = (attendeesByMajor[majorKey] || 0) + 1;
+
+        const secKey = `${a.grade}-${a.section}`;
+        attendeesBySection[secKey] = (attendeesBySection[secKey] || 0) + 1;
+      });
+
+      return {
+        stats: {
+          totalEvents,
+          totalAttendees,
+          checkedInAttendees,
+          pendingCheckIn,
+          attendeesByGrade,
+          attendeesByMajor,
+          attendeesBySection
+        },
+        emails,
+        events
+      };
+    } catch (err) {
+      console.warn('Error calculating stats from Supabase:', err);
+    }
+  }
+
+  return {
+    stats: {
+      totalEvents: 0,
+      totalAttendees: 0,
+      checkedInAttendees: 0,
+      pendingCheckIn: 0,
+      attendeesByGrade: {},
+      attendeesByMajor: {},
+      attendeesBySection: {}
+    },
+    emails: [],
+    events: []
+  };
+}
+
+/**
+ * Checks Supabase live connection status and counts.
+ */
+export async function getSupabaseLiveStatus(): Promise<{
+  connected: boolean;
+  totalEvents?: number;
+  totalAttendees?: number;
+  projectUrl?: string;
+}> {
+  // 1. Try backend endpoint first
+  const apiResult = await safeFetchJson<any>('/api/supabase/status');
+  if (apiResult.ok && apiResult.data) {
+    return apiResult.data;
+  }
+
+  // 2. Direct Supabase count query
+  if (supabase) {
+    try {
+      const { count: evCount, error: evErr } = await supabase.from('events').select('*', { count: 'exact', head: true });
+      const { count: attCount, error: attErr } = await supabase.from('attendees').select('*', { count: 'exact', head: true });
+
+      if (!evErr && !attErr) {
+        return {
+          connected: true,
+          totalEvents: evCount || 0,
+          totalAttendees: attCount || 0,
+          projectUrl: 'https://pqggmfhatpwqbznxhbrr.supabase.co'
+        };
+      }
+    } catch (err) {
+      console.warn('Direct Supabase status check error:', err);
+    }
+  }
+
+  return { connected: false };
+}
+
+/**
+ * Validates admin PIN (checks backend API first; falls back to Supabase app_settings or hardcoded defaults).
+ */
+export async function verifyAdminPin(pin: string): Promise<{ ok: boolean; token?: string; error?: string }> {
+  // 1. Try backend API
+  const apiResult = await safeFetchJson<{ token: string; message?: string }>('/api/admin/login', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ pin })
+  });
+
+  if (apiResult.ok && apiResult.data?.token) {
+    return { ok: true, token: apiResult.data.token };
+  }
+
+  // 2. Direct Supabase verification (for GitHub Pages static hosting)
+  if (supabase) {
+    try {
+      const { data } = await supabase.from('app_settings').select('value').eq('key', 'admin_credentials').maybeSingle();
+      const storedPin = data?.value?.pin;
+      if (storedPin && pin.trim().toLowerCase() === String(storedPin).trim().toLowerCase()) {
+        return { ok: true, token: 'admin-supabase-token' };
+      }
+    } catch (err) {
+      console.warn('Error checking PIN from Supabase:', err);
+    }
+  }
+
+  // 3. Fallback defaults
+  if (pin.trim() === 'CLED1906' || pin.trim().toLowerCase() === 'cled2026') {
+    return { ok: true, token: 'admin-static-token' };
+  }
+
+  return { ok: false, error: 'Clave de administración incorrecta.' };
+}
+
+/**
+ * Retrieves total attendee counts per event.
+ * Tries backend API first; falls back directly to Supabase for GitHub Pages.
+ */
+export async function getAttendeeCounts(): Promise<{ [eventId: string]: number }> {
+  // 1. Try backend API
+  const apiRes = await safeFetchJson<{ counts: { [id: string]: number } }>('/api/events/counts');
+  if (apiRes.ok && apiRes.data?.counts) {
+    return apiRes.data.counts;
+  }
+
+  // 2. Direct Supabase query
+  if (supabase) {
+    try {
+      const { data, error } = await supabase.from('attendees').select('event_id');
+      if (!error && data) {
+        const counts: { [id: string]: number } = {};
+        data.forEach(row => {
+          if (row.event_id) {
+            counts[row.event_id] = (counts[row.event_id] || 0) + 1;
+          }
+        });
+        return counts;
+      }
+    } catch (err) {
+      console.warn('Error fetching counts from Supabase:', err);
+    }
+  }
+
+  return {};
+}
+
+

@@ -9,7 +9,18 @@ import { CLEDEvent, Attendee, EmailLog, EventStats } from '../types';
 import { exportAttendanceToExcel, exportAttendanceToPDF } from '../utils/reports';
 import { checkProfanity, VALID_GRADES, VALID_SECTIONS_3RO, VALID_SECTIONS_OTHER, VALID_TECHNICAL_MAJORS } from '../utils/security';
 import { CLED_LOGO } from '../utils/logo';
-import { safeFetchJson, sanitizeUserErrorMessage } from '../services/api';
+import {
+  safeFetchJson,
+  sanitizeUserErrorMessage,
+  getAttendees,
+  toggleAttendeeAttendance,
+  deleteAttendeeRecord,
+  saveEventRecord,
+  deleteEventRecord,
+  getAdminStats,
+  getSupabaseLiveStatus,
+  verifyAdminPin
+} from '../services/api';
 
 interface AdminPanelProps {
   events: CLEDEvent[];
@@ -82,25 +93,12 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     e.preventDefault();
     setAuthError(null);
     try {
-      const res = await safeFetchJson<{ token: string; message?: string }>('/api/admin/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ pin: pinInput })
-      });
-      if (res.ok && res.data?.token) {
-        setAdminToken(res.data.token);
-        localStorage.setItem('cled_admin_token', res.data.token);
+      const res = await verifyAdminPin(pinInput);
+      if (res.ok && res.token) {
+        setAdminToken(res.token);
+        localStorage.setItem('cled_admin_token', res.token);
         return;
       }
-      
-      // Fallback for static hosting (GitHub Pages)
-      if (pinInput.trim() === 'CLED1906' || pinInput.trim().toLowerCase() === 'cled2026') {
-        const fallbackToken = 'admin-static-token';
-        setAdminToken(fallbackToken);
-        localStorage.setItem('cled_admin_token', fallbackToken);
-        return;
-      }
-
       throw new Error(res.error || 'Clave de administración incorrecta');
     } catch (err: any) {
       setAuthError(sanitizeUserErrorMessage(err));
@@ -136,41 +134,35 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   const fetchStats = async () => {
     if (!adminToken) return;
     try {
-      const res = await safeFetchJson<{ stats: EventStats; emails?: EmailLog[]; events?: CLEDEvent[] }>('/api/admin/stats', {
-        headers: { 'x-admin-token': adminToken }
-      });
-      if (res.ok && res.data?.stats) {
-        setStats(res.data.stats);
+      const res = await getAdminStats(adminToken);
+      if (res.stats) {
+        setStats(res.stats);
       }
     } catch (err) {
-      console.error(err);
+      console.error('Error fetching admin stats:', err);
     }
   };
 
   const fetchSupabaseStatus = async () => {
     try {
-      const res = await safeFetchJson<any>('/api/supabase/status');
-      if (res.ok && res.data) {
-        setSupabaseStatus(res.data);
+      const res = await getSupabaseLiveStatus();
+      if (res) {
+        setSupabaseStatus(res);
       }
     } catch (err) {
       console.error('Error fetching Supabase status:', err);
     }
   };
 
-  // 3. Fetch Attendees for selected event
+  // 3. Fetch Attendees for selected event (retrieves real Supabase data on GitHub Pages)
   const fetchAttendees = async (eventId: string) => {
     if (!adminToken || !eventId) return;
     setAttendeesLoading(true);
     try {
-      const res = await safeFetchJson<{ attendees: Attendee[] }>(`/api/admin/attendees?eventId=${eventId}`, {
-        headers: { 'x-admin-token': adminToken }
-      });
-      if (res.ok && res.data?.attendees) {
-        setAttendees(res.data.attendees);
-      }
+      const data = await getAttendees(eventId, adminToken);
+      setAttendees(data);
     } catch (err) {
-      console.error(err);
+      console.error('Error fetching attendees:', err);
     } finally {
       setAttendeesLoading(false);
     }
@@ -195,13 +187,12 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   // Attendance Toggle (Check-in)
   const handleToggleAttendance = async (attendeeId: string) => {
     if (!adminToken) return;
+    const targetAttendee = attendees.find(a => a.id === attendeeId);
+    if (!targetAttendee) return;
     try {
-      const res = await safeFetchJson<{ attendee: Attendee }>(`/api/admin/attendees/${attendeeId}/toggle-attendance`, {
-        method: 'POST',
-        headers: { 'x-admin-token': adminToken }
-      });
-      if (res.ok && res.data?.attendee) {
-        const updated = res.data.attendee;
+      const res = await toggleAttendeeAttendance(targetAttendee, adminToken);
+      if (res.success && res.attendee) {
+        const updated = res.attendee;
         setAttendees(prev => prev.map(a => a.id === updated.id ? updated : a));
         fetchStats();
 
@@ -215,7 +206,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
         setTimeout(() => setDoorNotice(null), 5000);
       }
     } catch (err) {
-      console.error(err);
+      console.error('Error toggling attendance:', err);
     }
   };
 
@@ -224,16 +215,13 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     if (!confirm('¿Estás seguro de eliminar este registro de estudiante?')) return;
     if (!adminToken) return;
     try {
-      const res = await safeFetchJson(`/api/admin/attendees/${attendeeId}`, {
-        method: 'DELETE',
-        headers: { 'x-admin-token': adminToken }
-      });
-      if (res.ok) {
+      const res = await deleteAttendeeRecord(attendeeId, adminToken);
+      if (res.success) {
         setAttendees(prev => prev.filter(a => a.id !== attendeeId));
         fetchStats();
       }
     } catch (err) {
-      console.error(err);
+      console.error('Error deleting attendee:', err);
     }
   };
 
@@ -249,19 +237,14 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     }
 
     try {
-      const url = editingEvent ? `/api/events/${editingEvent.id}` : '/api/events';
-      const method = editingEvent ? 'PUT' : 'POST';
+      const res = await saveEventRecord(
+        eventFormData,
+        Boolean(editingEvent),
+        editingEvent?.id,
+        adminToken || undefined
+      );
 
-      const res = await safeFetchJson(url, {
-        method,
-        headers: {
-          'Content-Type': 'application/json',
-          'x-admin-token': adminToken || ''
-        },
-        body: JSON.stringify(eventFormData)
-      });
-
-      if (!res.ok) throw new Error(res.error || 'Error guardando evento');
+      if (!res.success) throw new Error(res.message || 'Error guardando evento');
 
       setIsEventModalOpen(false);
       setEditingEvent(null);
@@ -300,11 +283,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     if (!confirm('¿Deseas eliminar este evento y todas sus inscripciones asociadas?')) return;
     if (!adminToken) return;
     try {
-      const res = await safeFetchJson(`/api/events/${eventId}`, {
-        method: 'DELETE',
-        headers: { 'x-admin-token': adminToken }
-      });
-      if (res.ok) {
+      const res = await deleteEventRecord(eventId, adminToken);
+      if (res.success) {
         onRefreshEvents();
         fetchStats();
         if (selectedEventId === eventId) {
@@ -313,7 +293,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
         }
       }
     } catch (err) {
-      console.error(err);
+      console.error('Error deleting event:', err);
     }
   };
 

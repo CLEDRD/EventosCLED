@@ -4,7 +4,7 @@ import {
   CheckCircle2, ArrowRight, Video, MapPin, ChevronRight, BookOpen
 } from 'lucide-react';
 import { CLEDEvent, Attendee } from './types';
-import { getEvents } from './services/api';
+import { getEvents, getAttendeeCounts } from './services/api';
 import { Navbar } from './components/Navbar';
 import { EventCard } from './components/EventCard';
 import { EventRegistrationModal } from './components/EventRegistrationModal';
@@ -38,8 +38,12 @@ export default function App() {
   const fetchEvents = async () => {
     setIsLoadingEvents(true);
     try {
-      const loadedEvents = await getEvents();
+      const [loadedEvents, loadedCounts] = await Promise.all([
+        getEvents(),
+        getAttendeeCounts()
+      ]);
       setEvents(loadedEvents);
+      setAttendeeCounts(loadedCounts);
     } catch (err) {
       console.error('Error cargando eventos:', err);
     } finally {
