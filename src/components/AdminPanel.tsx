@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import {
   X, Shield, Lock, Calendar, Users, FileSpreadsheet, FileText, Send, Plus,
   Edit2, Trash2, CheckCircle2, Clock, MapPin, Eye, Search, Download, Upload,
-  RefreshCw, Sparkles, AlertTriangle, Check, Key, QrCode, Mail, Video, ExternalLink,
+  RefreshCw, Sparkles, AlertTriangle, Check, QrCode, Mail, Video, ExternalLink,
   Phone, GraduationCap, BookOpen, UserCheck, AlertCircle, DoorOpen, Database, Cloud
 } from 'lucide-react';
 import { CLEDEvent, Attendee, EmailLog, EventStats } from '../types';
@@ -76,11 +76,6 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     speakerRole: ''
   });
   const [eventFormError, setEventFormError] = useState<string | null>(null);
-
-  // Change PIN modal
-  const [isChangePinOpen, setIsChangePinOpen] = useState(false);
-  const [newPin, setNewPin] = useState('');
-  const [pinNotice, setPinNotice] = useState<string | null>(null);
 
   // 1. Check Login
   const handleLogin = async (e: React.FormEvent) => {
@@ -322,36 +317,6 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     }
   };
 
-  // Change PIN
-  const handleChangePin = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newPin || newPin.length < 4) return;
-    try {
-      const res = await safeFetchJson('/api/admin/change-pin', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-admin-token': adminToken || ''
-        },
-        body: JSON.stringify({ newPin })
-      });
-      if (res.ok) {
-        setPinNotice('Clave actualizada correctamente. Úsala en tu próximo inicio de sesión.');
-        setAdminToken(newPin.trim());
-        localStorage.setItem('cled_admin_token', newPin.trim());
-        setNewPin('');
-        setTimeout(() => {
-          setIsChangePinOpen(false);
-          setPinNotice(null);
-        }, 2000);
-      } else {
-        setPinNotice('Error: ' + (res.error || 'No se pudo actualizar la clave'));
-      }
-    } catch (err: any) {
-      setPinNotice('Error: ' + sanitizeUserErrorMessage(err));
-    }
-  };
-
   const currentEvent = events.find(e => e.id === selectedEventId) || events[0];
 
   // Filtering for Entrance Check-In Cards
@@ -509,14 +474,6 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
 
           <div className="flex items-center gap-2">
             <button
-              onClick={() => setIsChangePinOpen(true)}
-              className="px-3 py-1.5 rounded-xl bg-white/15 hover:bg-white/25 text-white text-xs font-bold flex items-center gap-1.5 transition-colors border border-white/20"
-            >
-              <Key className="w-3.5 h-3.5 text-blue-200" />
-              <span>Cambiar PIN</span>
-            </button>
-
-            <button
               onClick={handleLogout}
               className="px-3 py-1.5 rounded-xl bg-rose-600/80 hover:bg-rose-600 text-white text-xs font-bold flex items-center gap-1.5 transition-colors shadow-xs"
             >
@@ -532,68 +489,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
           </div>
         </div>
 
-        {/* Tab Navigation Menu */}
-        <div className="bg-white text-slate-700 px-6 border-b border-slate-200 flex items-center overflow-x-auto gap-2 shadow-xs">
-          {/* TAB 1: ENTRANCE CHECK-IN (User priority) */}
-          <button
-            onClick={() => setActiveTab('doors')}
-            className={`py-3.5 px-4 text-xs font-bold uppercase tracking-wider flex items-center gap-2 border-b-2 transition-colors whitespace-nowrap ${
-              activeTab === 'doors'
-                ? 'border-emerald-600 text-emerald-800 bg-emerald-50/70'
-                : 'border-transparent text-slate-600 hover:text-slate-900 hover:bg-slate-100'
-            }`}
-          >
-            <DoorOpen className="w-4 h-4 text-emerald-600" />
-            <span>🚪 Registro en Puerta / Entradas</span>
-            {pendingCount > 0 && (
-              <span className="bg-amber-500 text-slate-950 text-[10px] font-black px-1.5 py-0.2 rounded-full">
-                {pendingCount}
-              </span>
-            )}
-          </button>
-
-          {/* TAB 2: EVENTS */}
-          <button
-            onClick={() => setActiveTab('events')}
-            className={`py-3.5 px-4 text-xs font-bold uppercase tracking-wider flex items-center gap-2 border-b-2 transition-colors whitespace-nowrap ${
-              activeTab === 'events'
-                ? 'border-blue-700 text-blue-800 bg-blue-50/70'
-                : 'border-transparent text-slate-600 hover:text-slate-900 hover:bg-slate-100'
-            }`}
-          >
-            <Calendar className="w-4 h-4 text-blue-700" />
-            <span>Gestionar Eventos ({events.length})</span>
-          </button>
-
-          {/* TAB 3: ATTENDEES TABLE & REPORTS */}
-          <button
-            onClick={() => setActiveTab('attendees')}
-            className={`py-3.5 px-4 text-xs font-bold uppercase tracking-wider flex items-center gap-2 border-b-2 transition-colors whitespace-nowrap ${
-              activeTab === 'attendees'
-                ? 'border-blue-700 text-blue-800 bg-blue-50/70'
-                : 'border-transparent text-slate-600 hover:text-slate-900 hover:bg-slate-100'
-            }`}
-          >
-            <Users className="w-4 h-4 text-blue-700" />
-            <span>Listado & Reportes (Excel / PDF)</span>
-          </button>
-
-          {/* TAB 4: DATABASE & SECURITY */}
-          <button
-            onClick={() => setActiveTab('database')}
-            className={`py-3.5 px-4 text-xs font-bold uppercase tracking-wider flex items-center gap-2 border-b-2 transition-colors whitespace-nowrap ${
-              activeTab === 'database'
-                ? 'border-blue-700 text-blue-800 bg-blue-50/70'
-                : 'border-transparent text-slate-600 hover:text-slate-900 hover:bg-slate-100'
-            }`}
-          >
-            <Shield className="w-4 h-4 text-blue-700" />
-            <span>Seguridad & Datos IPMHU</span>
-          </button>
-        </div>
-
-        {/* Scrollable Tab Body */}
-        <div className="flex-1 overflow-y-auto p-5 sm:p-6">
+        {/* Main Body with Lateral Menu on the Right */}
+        <div className="flex-1 flex flex-col md:flex-row overflow-hidden min-h-0">
+          {/* Main Content Area (Left / Center on desktop) */}
+          <div className="flex-1 overflow-y-auto p-4 sm:p-6 order-2 md:order-1 min-w-0">
           
           {/* ============================================================== */}
           {/* TAB 1: REGISTRO EN PUERTA / ENTRADAS (CARDS SEARCH WORKFLOW) */}
@@ -1235,7 +1134,159 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
             </div>
           )}
         </div>
+
+        {/* ============================================================== */}
+        {/* LATERAL MENU ON THE RIGHT SIDE */}
+        {/* ============================================================== */}
+        <aside className="w-full md:w-72 lg:w-80 bg-white border-b md:border-b-0 md:border-l border-slate-200 flex flex-col justify-between shrink-0 p-3.5 sm:p-4 z-10 shadow-xs order-1 md:order-2 overflow-y-auto">
+          <div className="space-y-3">
+            <div className="hidden md:flex items-center justify-between pb-2.5 border-b border-slate-100">
+              <div>
+                <p className="text-[11px] font-extrabold text-slate-800 uppercase tracking-wider">
+                  Menú de Gestión
+                </p>
+                <p className="text-[10px] text-slate-500">
+                  Opciones del Panel CLED
+                </p>
+              </div>
+              <span className="text-[10px] font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded-full border border-blue-100">
+                Panel CLED
+              </span>
+            </div>
+
+            <nav className="flex flex-row md:flex-col gap-2 overflow-x-auto md:overflow-x-visible pb-1 md:pb-0">
+              {/* OPTION 1: REGISTRO EN PUERTA / ENTRADAS */}
+              <button
+                type="button"
+                onClick={() => setActiveTab('doors')}
+                className={`w-full text-left p-3 rounded-xl transition-all border flex items-center justify-between gap-2.5 shrink-0 md:shrink ${
+                  activeTab === 'doors'
+                    ? 'bg-emerald-50/90 border-emerald-500 text-emerald-950 ring-2 ring-emerald-500/20 shadow-xs'
+                    : 'bg-slate-50/70 hover:bg-slate-100 border-slate-200/80 text-slate-700'
+                }`}
+              >
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${
+                    activeTab === 'doors' ? 'bg-emerald-600 text-white shadow-xs' : 'bg-white text-emerald-700 border border-slate-200'
+                  }`}>
+                    <DoorOpen className="w-4 h-4" />
+                  </div>
+                  <div className="min-w-0 text-left">
+                    <p className="text-xs font-bold truncate">Registro en Puerta</p>
+                    <p className="text-[10px] text-slate-500 truncate hidden sm:block">Control y validación de boletas</p>
+                  </div>
+                </div>
+                {pendingCount > 0 && (
+                  <span className="bg-amber-500 text-slate-950 text-[10px] font-black px-2 py-0.5 rounded-full shrink-0 shadow-xs">
+                    {pendingCount}
+                  </span>
+                )}
+              </button>
+
+              {/* OPTION 2: GESTIONAR EVENTOS */}
+              <button
+                type="button"
+                onClick={() => setActiveTab('events')}
+                className={`w-full text-left p-3 rounded-xl transition-all border flex items-center justify-between gap-2.5 shrink-0 md:shrink ${
+                  activeTab === 'events'
+                    ? 'bg-blue-50/90 border-blue-600 text-blue-950 ring-2 ring-blue-500/20 shadow-xs'
+                    : 'bg-slate-50/70 hover:bg-slate-100 border-slate-200/80 text-slate-700'
+                }`}
+              >
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${
+                    activeTab === 'events' ? 'bg-blue-800 text-white shadow-xs' : 'bg-white text-blue-800 border border-slate-200'
+                  }`}>
+                    <Calendar className="w-4 h-4" />
+                  </div>
+                  <div className="min-w-0 text-left">
+                    <p className="text-xs font-bold truncate">Gestionar Eventos</p>
+                    <p className="text-[10px] text-slate-500 truncate hidden sm:block">Crear, editar y códigos</p>
+                  </div>
+                </div>
+                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0 ${
+                  activeTab === 'events' ? 'bg-blue-200/80 text-blue-900' : 'bg-slate-200 text-slate-700'
+                }`}>
+                  {events.length}
+                </span>
+              </button>
+
+              {/* OPTION 3: LISTADO & REPORTES */}
+              <button
+                type="button"
+                onClick={() => setActiveTab('attendees')}
+                className={`w-full text-left p-3 rounded-xl transition-all border flex items-center justify-between gap-2.5 shrink-0 md:shrink ${
+                  activeTab === 'attendees'
+                    ? 'bg-blue-50/90 border-blue-600 text-blue-950 ring-2 ring-blue-500/20 shadow-xs'
+                    : 'bg-slate-50/70 hover:bg-slate-100 border-slate-200/80 text-slate-700'
+                }`}
+              >
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${
+                    activeTab === 'attendees' ? 'bg-blue-800 text-white shadow-xs' : 'bg-white text-blue-800 border border-slate-200'
+                  }`}>
+                    <Users className="w-4 h-4" />
+                  </div>
+                  <div className="min-w-0 text-left">
+                    <p className="text-xs font-bold truncate">Listado & Reportes</p>
+                    <p className="text-[10px] text-slate-500 truncate hidden sm:block">Excel y PDF oficial</p>
+                  </div>
+                </div>
+                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0 ${
+                  activeTab === 'attendees' ? 'bg-blue-200/80 text-blue-900' : 'bg-slate-200 text-slate-700'
+                }`}>
+                  {attendees.length}
+                </span>
+              </button>
+
+              {/* OPTION 4: SEGURIDAD & DATOS */}
+              <button
+                type="button"
+                onClick={() => setActiveTab('database')}
+                className={`w-full text-left p-3 rounded-xl transition-all border flex items-center justify-between gap-2.5 shrink-0 md:shrink ${
+                  activeTab === 'database'
+                    ? 'bg-blue-50/90 border-blue-600 text-blue-950 ring-2 ring-blue-500/20 shadow-xs'
+                    : 'bg-slate-50/70 hover:bg-slate-100 border-slate-200/80 text-slate-700'
+                }`}
+              >
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${
+                    activeTab === 'database' ? 'bg-blue-800 text-white shadow-xs' : 'bg-white text-blue-800 border border-slate-200'
+                  }`}>
+                    <Shield className="w-4 h-4" />
+                  </div>
+                  <div className="min-w-0 text-left">
+                    <p className="text-xs font-bold truncate">Seguridad & Datos</p>
+                    <p className="text-[10px] text-slate-500 truncate hidden sm:block">Supabase & respaldo</p>
+                  </div>
+                </div>
+              </button>
+            </nav>
+          </div>
+
+          {/* Bottom Widget in Lateral Sidebar */}
+          <div className="mt-4 pt-3 border-t border-slate-200/80 hidden md:block space-y-2.5">
+            <div className="p-3 bg-slate-50 rounded-xl border border-slate-200/80">
+              <div className="flex items-center justify-between text-[11px] font-bold text-slate-700">
+                <span>Evento Activo:</span>
+                <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
+              </div>
+              <p className="text-xs font-extrabold text-blue-950 mt-1 truncate">
+                {currentEvent?.title || 'Sin eventos'}
+              </p>
+              <p className="text-[10px] text-slate-500">
+                {currentEvent?.date} • {currentEvent?.time} hrs
+              </p>
+            </div>
+
+            <div className="flex items-center justify-between text-[10px] text-slate-500 px-1">
+              <span>Sistema: IPMHU CLED</span>
+              <span className="font-bold text-slate-700">v2.6 Cloud</span>
+            </div>
+          </div>
+        </aside>
       </div>
+    </div>
 
       {/* ============================================================== */}
       {/* MODAL: CREATE / EDIT EVENT */}
@@ -1416,63 +1467,6 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
         </div>
       )}
 
-      {/* ============================================================== */}
-      {/* MODAL: CHANGE ADMIN PIN */}
-      {/* ============================================================== */}
-      {isChangePinOpen && (
-        <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="relative w-full max-w-sm bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden p-6 space-y-4">
-            <div className="flex items-center justify-between">
-              <h3 className="font-bold text-slate-900 text-sm">Cambiar PIN de Administración</h3>
-              <button
-                onClick={() => setIsChangePinOpen(false)}
-                className="text-slate-400 hover:text-slate-700"
-              >
-                ✕
-              </button>
-            </div>
-
-            {pinNotice && (
-              <div className="p-3 bg-blue-50 border border-blue-200 text-blue-800 text-xs rounded-lg">
-                {pinNotice}
-              </div>
-            )}
-
-            <form onSubmit={handleChangePin} className="space-y-3">
-              <div>
-                <label className="block text-xs font-bold text-slate-700 uppercase mb-1">
-                  Nuevo PIN (Mínimo 4 caracteres)
-                </label>
-                <input
-                  type="password"
-                  required
-                  minLength={4}
-                  value={newPin}
-                  onChange={(e) => setNewPin(e.target.value)}
-                  className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-blue-600"
-                  placeholder="Escribe el nuevo PIN"
-                />
-              </div>
-
-              <div className="flex justify-end gap-2 pt-2">
-                <button
-                  type="button"
-                  onClick={() => setIsChangePinOpen(false)}
-                  className="px-3 py-1.5 text-xs text-slate-600"
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="submit"
-                  className="px-4 py-1.5 bg-blue-900 text-white rounded-lg text-xs font-bold"
-                >
-                  Guardar PIN
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
     </div>
   );
 };
