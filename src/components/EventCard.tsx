@@ -1,5 +1,5 @@
 import React from 'react';
-import { Calendar, Clock, MapPin, Users, Lock, Unlock, ArrowRight, Video, Award, CheckCircle2 } from 'lucide-react';
+import { Calendar, Clock, MapPin, Lock, Unlock, ArrowRight, Video, Award } from 'lucide-react';
 import { CLEDEvent } from '../types';
 
 interface EventCardProps {
@@ -175,18 +175,12 @@ export const EventCard: React.FC<EventCardProps> = ({
         </div>
 
         {/* Card Footer */}
-        <div className="mt-5 pt-3.5 border-t border-slate-100 flex items-center justify-between gap-3">
-          {/* Attendees */}
-          <div className="flex items-center gap-1.5 text-slate-700 text-xs font-semibold">
-            <Users className="w-3.5 h-3.5 text-blue-700" />
-            <span>{attendeesCount} {attendeesCount === 1 ? 'inscrito' : 'inscritos'}</span>
-          </div>
-
+        <div className="mt-5 pt-3.5 border-t border-slate-100 flex items-center justify-end">
           {/* Action Button */}
           <button
             onClick={handleActionClick}
             disabled={isFull}
-            className={`px-4 py-2 rounded-xl text-xs font-bold tracking-wide flex items-center gap-1.5 transition-all shadow-xs ${
+            className={`w-full py-2.5 px-4 rounded-xl text-xs font-bold tracking-wide flex items-center justify-center gap-2 transition-all shadow-xs ${
               isFull
                 ? 'bg-slate-200 text-slate-500 cursor-not-allowed'
                 : !event.isPublic && !isUnlocked
