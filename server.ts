@@ -6,6 +6,7 @@ dotenv.config();
 import { createServer as createViteServer } from 'vite';
 import { checkProfanity, validateRegistrationData, generateTicketCode, generateConfirmationEmailHtml } from './src/utils/security';
 import { CLEDEvent, Attendee, EmailLog } from './src/types';
+import { statusToLegacySupabase, encodeStatusInDescription } from './src/utils/eventStatus';
 import { 
   supabase, 
   eventFromRow, 
@@ -137,7 +138,23 @@ async function saveEventToDB(event: CLEDEvent): Promise<void> {
 
   if (supabase) {
     try {
-      await supabase.from('events').upsert(eventToRow(event));
+      const row = eventToRow(event);
+      const { error } = await supabase.from('events').upsert(row);
+      if (error) {
+        // If the Supabase database has a check constraint like events_status_check
+        if (error.message?.includes('events_status_check') || error.code === '23514') {
+          console.info('[Supabase] Applying status compatibility fallback for events_status_check...');
+          const legacyStatus = statusToLegacySupabase(event.status);
+          const legacyRow = {
+            ...row,
+            status: legacyStatus,
+            description: encodeStatusInDescription(event.status, event.description)
+          };
+          await supabase.from('events').upsert(legacyRow);
+        } else {
+          console.warn('[Supabase] Error saving event:', error.message);
+        }
+      }
     } catch (err) {
       console.warn('[Supabase] Error saving event:', err);
     }
@@ -428,8 +445,19 @@ app.post('/api/events/:id/register', async (req: Request, res: Response) => {
     return res.status(404).json({ success: false, message: 'El evento no existe.' });
   }
 
-  if (event.status !== 'active') {
-    return res.status(400).json({ success: false, message: 'Este evento se encuentra finalizado o no está admitiendo inscripciones.' });
+  const normalizedStatus = (event.status || 'DISPONIBLE').toUpperCase();
+  if (normalizedStatus !== 'ACTIVE' && normalizedStatus !== 'DISPONIBLE') {
+    let msg = 'Este evento no está admitiendo inscripciones.';
+    if (normalizedStatus === 'SOLD OUT') {
+      msg = 'Las boletas para este evento están agotadas (SOLD OUT).';
+    } else if (normalizedStatus === 'SUSPENDIDO' || normalizedStatus === 'SUPENSDIDO') {
+      msg = 'Este evento se encuentra temporalmente suspendido.';
+    } else if (normalizedStatus === 'PROXIMAMENTE') {
+      msg = 'Las inscripciones para este evento estarán abiertas próximamente.';
+    } else if (normalizedStatus === 'PASADO' || normalizedStatus === 'COMPLETED') {
+      msg = 'Este evento ya ha finalizado.';
+    }
+    return res.status(400).json({ success: false, message: msg });
   }
 
   // Private event code verification if not public
@@ -668,7 +696,10 @@ app.get('/api/admin/stats', checkAdminAuth, async (req: Request, res: Response) 
   const emails = await fetchEmailLogs();
 
   const totalEvents = events.length;
-  const activeEvents = events.filter(e => e.status === 'active').length;
+  const activeEvents = events.filter(e => {
+    const s = (e.status || 'DISPONIBLE').toUpperCase();
+    return s === 'ACTIVE' || s === 'DISPONIBLE';
+  }).length;
   const totalAttendees = attendees.length;
   const confirmedAttendees = attendees.filter(a => a.attended).length;
   const attendanceRate = totalAttendees > 0 ? Number(((confirmedAttendees / totalAttendees) * 100).toFixed(1)) : 0;
@@ -733,7 +764,7 @@ app.post('/api/events', checkAdminAuth, async (req: Request, res: Response) => {
     isPublic: isPublic !== false,
     accessCode: isPublic ? '' : (accessCode || 'CLED-VIP').trim().toUpperCase(),
     capacity: Number(capacity) || 0,
-    status: 'active',
+    status: req.body.status || 'DISPONIBLE',
     speaker: (speaker || '').trim(),
     speakerRole: (speakerRole || '').trim(),
     createdAt: now,
@@ -743,6 +774,28 @@ app.post('/api/events', checkAdminAuth, async (req: Request, res: Response) => {
   await saveEventToDB(newEvent);
 
   res.status(201).json({ success: true, event: newEvent, message: 'Evento creado exitosamente en la base de datos.' });
+});
+
+// Admin Quick-Update Event Status
+app.patch('/api/events/:id/status', checkAdminAuth, async (req: Request, res: Response) => {
+  const { status } = req.body;
+  if (!status) {
+    return res.status(400).json({ success: false, message: 'El estado es requerido.' });
+  }
+
+  const existing = await fetchEventById(req.params.id);
+  if (!existing) {
+    return res.status(404).json({ success: false, message: 'Evento no encontrado.' });
+  }
+
+  const updated: CLEDEvent = {
+    ...existing,
+    status,
+    updatedAt: new Date().toISOString()
+  };
+
+  await saveEventToDB(updated);
+  res.json({ success: true, event: updated, message: `Estado del evento cambiado a ${status}.` });
 });
 
 // Admin Update Event

@@ -1,5 +1,6 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { CLEDEvent, Attendee, EmailLog } from '../types';
+import { decodeStatusFromRow } from '../utils/eventStatus';
 
 export const SUPABASE_URL = 
   (typeof process !== 'undefined' && process.env?.SUPABASE_URL) ||
@@ -25,10 +26,12 @@ try {
 
 // Row mappers for Supabase (snake_case) <-> Application Model (camelCase)
 export function eventFromRow(row: any): CLEDEvent {
+  const { status, description } = decodeStatusFromRow(row.status, row.description);
+
   return {
     id: row.id,
     title: row.title,
-    description: row.description || '',
+    description: description,
     category: row.category || 'General',
     date: row.date,
     time: row.time || '09:00',
@@ -40,7 +43,7 @@ export function eventFromRow(row: any): CLEDEvent {
     isPublic: Boolean(row.is_public),
     accessCode: row.access_code || undefined,
     capacity: Number(row.capacity) || 0,
-    status: row.status || 'active',
+    status: status,
     speaker: row.speaker || undefined,
     speakerRole: row.speaker_role || undefined,
     createdAt: row.created_at || new Date().toISOString(),

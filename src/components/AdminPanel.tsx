@@ -5,10 +5,11 @@ import {
   RefreshCw, Sparkles, AlertTriangle, Check, QrCode, Mail, Video, ExternalLink,
   Phone, GraduationCap, BookOpen, UserCheck, AlertCircle, DoorOpen, Database, Cloud
 } from 'lucide-react';
-import { CLEDEvent, Attendee, EmailLog, EventStats } from '../types';
+import { CLEDEvent, Attendee, EmailLog, EventStats, EventStatus } from '../types';
 import { exportAttendanceToExcel, exportAttendanceToPDF } from '../utils/reports';
 import { checkProfanity, VALID_GRADES, VALID_SECTIONS_3RO, VALID_SECTIONS_OTHER, VALID_TECHNICAL_MAJORS } from '../utils/security';
 import { CLED_LOGO } from '../utils/logo';
+import { EVENT_STATUS_OPTIONS, getStatusConfig, normalizeEventStatus } from '../utils/eventStatus';
 import {
   safeFetchJson,
   sanitizeUserErrorMessage,
@@ -19,7 +20,8 @@ import {
   deleteEventRecord,
   getAdminStats,
   getSupabaseLiveStatus,
-  verifyAdminPin
+  verifyAdminPin,
+  updateEventStatus
 } from '../services/api';
 
 interface AdminPanelProps {
@@ -83,10 +85,32 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     isPublic: true,
     accessCode: 'CLED-MAX-2026',
     capacity: 150,
+    status: 'DISPONIBLE' as EventStatus,
     speaker: '',
     speakerRole: ''
   });
   const [eventFormError, setEventFormError] = useState<string | null>(null);
+  const [updatingStatusId, setUpdatingStatusId] = useState<string | null>(null);
+
+  // Quick-change event status (SOLD OUT, SUSPENDIDO, PROXIMAMENTE, DISPONIBLE, PASADO)
+  const handleQuickStatusChange = async (eventId: string, newStatus: EventStatus) => {
+    setUpdatingStatusId(eventId);
+    try {
+      const res = await updateEventStatus(eventId, newStatus, adminToken || undefined);
+      if (res.success) {
+        setDoorNotice(`Estado del evento actualizado a ${newStatus} exitosamente.`);
+        setTimeout(() => setDoorNotice(null), 3500);
+        onRefreshEvents();
+        fetchStats();
+      } else {
+        alert(res.message || 'No se pudo actualizar el estado del evento.');
+      }
+    } catch (err: any) {
+      alert(sanitizeUserErrorMessage(err));
+    } finally {
+      setUpdatingStatusId(null);
+    }
+  };
 
   // 1. Check Login
   const handleLogin = async (e: React.FormEvent) => {
@@ -272,6 +296,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       isPublic: ev.isPublic,
       accessCode: ev.accessCode || 'CLED-MAX-2026',
       capacity: ev.capacity,
+      status: normalizeEventStatus(ev.status),
       speaker: ev.speaker || '',
       speakerRole: ev.speakerRole || ''
     });
@@ -482,19 +507,31 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
               {/* Event Selector & Door Metrics */}
               <div className="bg-white p-4 sm:p-5 rounded-2xl border border-slate-200 shadow-sm flex flex-col lg:flex-row lg:items-center justify-between gap-4">
                 <div className="flex-1 max-w-md">
-                  <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
-                    Seleccionar Evento en Puerta:
-                  </label>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider">
+                      Seleccionar Evento en Puerta:
+                    </label>
+                    {events.find(e => e.id === selectedEventId) && (
+                      <span className={`text-[10px] font-black uppercase px-2 py-0.5 rounded border shadow-2xs ${
+                        getStatusConfig(events.find(e => e.id === selectedEventId)!.status).badgeColor
+                      }`}>
+                        {getStatusConfig(events.find(e => e.id === selectedEventId)!.status).badgeLabel}
+                      </span>
+                    )}
+                  </div>
                   <select
                     value={selectedEventId}
                     onChange={(e) => setSelectedEventId(e.target.value)}
                     className="w-full px-3.5 py-2.5 text-sm rounded-xl border border-slate-300 bg-white font-bold text-slate-900 focus:ring-2 focus:ring-blue-600 focus:outline-none"
                   >
-                    {events.map(ev => (
-                      <option key={ev.id} value={ev.id}>
-                        {ev.title} — {ev.date} ({ev.time} hrs)
-                      </option>
-                    ))}
+                    {events.map(ev => {
+                      const cfg = getStatusConfig(ev.status);
+                      return (
+                        <option key={ev.id} value={ev.id}>
+                          [{cfg.badgeLabel}] {ev.title} — {ev.date} ({ev.time} hrs)
+                        </option>
+                      );
+                    })}
                   </select>
                 </div>
 
@@ -788,6 +825,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                       isPublic: true,
                       accessCode: 'CLED-MAX-2026',
                       capacity: 150,
+                      status: 'DISPONIBLE',
                       speaker: '',
                       speakerRole: ''
                     });
@@ -806,6 +844,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                   <thead className="bg-slate-100/80 text-slate-700 uppercase font-bold border-b border-slate-200">
                     <tr>
                       <th className="p-3">Evento</th>
+                      <th className="p-3">Estado</th>
                       <th className="p-3">Fecha / Hora</th>
                       <th className="p-3">Lugar / Modalidad</th>
                       <th className="p-3">Acceso</th>
@@ -814,63 +853,86 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 text-slate-800">
-                    {events.map(ev => (
-                      <tr key={ev.id} className="hover:bg-slate-50 transition-colors">
-                        <td className="p-3 max-w-xs">
-                          <p className="font-bold text-slate-900 truncate">{ev.title}</p>
-                          <p className="text-[11px] text-slate-500 truncate">{ev.category}</p>
-                        </td>
-                        <td className="p-3 whitespace-nowrap">
-                          <p className="font-semibold text-slate-800">{ev.date}</p>
-                          <p className="text-[11px] text-slate-500">{ev.time} hrs</p>
-                        </td>
-                        <td className="p-3 max-w-[200px] truncate">
-                          <p className="truncate font-medium text-slate-700">{ev.location}</p>
-                          <p className="text-[11px] text-blue-600">{ev.isVirtual ? 'Virtual' : 'Presencial'}</p>
-                        </td>
-                        <td className="p-3 whitespace-nowrap">
-                          {ev.isPublic ? (
-                            <span className="px-2 py-0.5 rounded bg-emerald-50 text-emerald-800 border border-emerald-200 text-[10px] font-bold">
-                              Público
-                            </span>
-                          ) : (
-                            <span className="px-2 py-0.5 rounded bg-amber-50 text-amber-800 border border-amber-200 text-[10px] font-bold flex items-center gap-1 w-fit">
-                              <Lock className="w-2.5 h-2.5" />
-                              <span>{ev.accessCode}</span>
-                            </span>
-                          )}
-                        </td>
-                        <td className="p-3">
-                          {ev.hasImage ? (
-                            <span className="text-[10px] bg-blue-50 text-blue-800 font-semibold px-2 py-0.5 rounded border border-blue-200">
-                              Con Imagen
-                            </span>
-                          ) : (
-                            <span className="text-[10px] bg-slate-100 text-slate-600 font-semibold px-2 py-0.5 rounded">
-                              Sin Imagen
-                            </span>
-                          )}
-                        </td>
-                        <td className="p-3 text-right whitespace-nowrap">
-                          <div className="flex items-center justify-end gap-1.5">
-                            <button
-                              onClick={() => handleOpenEditEvent(ev)}
-                              className="p-1.5 rounded-lg bg-blue-50 text-blue-700 hover:bg-blue-100"
-                              title="Editar Evento"
-                            >
-                              <Edit2 className="w-3.5 h-3.5" />
-                            </button>
-                            <button
-                              onClick={() => handleDeleteEvent(ev.id)}
-                              className="p-1.5 rounded-lg bg-rose-50 text-rose-700 hover:bg-rose-100"
-                              title="Eliminar Evento"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
+                    {events.map(ev => {
+                      const currentStatus = normalizeEventStatus(ev.status);
+                      const statusCfg = getStatusConfig(ev.status);
+                      return (
+                        <tr key={ev.id} className="hover:bg-slate-50 transition-colors">
+                          <td className="p-3 max-w-xs">
+                            <p className="font-bold text-slate-900 truncate">{ev.title}</p>
+                            <p className="text-[11px] text-slate-500 truncate">{ev.category}</p>
+                          </td>
+                          <td className="p-3 whitespace-nowrap">
+                            <div className="flex items-center gap-1.5">
+                              <select
+                                value={currentStatus}
+                                onChange={(e) => handleQuickStatusChange(ev.id, e.target.value as EventStatus)}
+                                disabled={updatingStatusId === ev.id}
+                                title="Cambiar estado del evento"
+                                className={`text-[11px] font-black py-1 px-2.5 rounded-lg border shadow-2xs cursor-pointer focus:ring-2 focus:ring-blue-600 focus:outline-none transition-all ${
+                                  statusCfg.badgeColor
+                                }`}
+                              >
+                                <option value="DISPONIBLE" className="bg-white text-emerald-800 font-bold">🟢 DISPONIBLE</option>
+                                <option value="SOLD OUT" className="bg-white text-rose-800 font-bold">🔴 SOLD OUT</option>
+                                <option value="SUSPENDIDO" className="bg-white text-red-800 font-bold">⛔ SUSPENDIDO</option>
+                                <option value="PROXIMAMENTE" className="bg-white text-amber-800 font-bold">⏳ PRÓXIMAMENTE</option>
+                                <option value="PASADO" className="bg-white text-slate-800 font-bold">🏁 PASADO</option>
+                              </select>
+                            </div>
+                          </td>
+                          <td className="p-3 whitespace-nowrap">
+                            <p className="font-semibold text-slate-800">{ev.date}</p>
+                            <p className="text-[11px] text-slate-500">{ev.time} hrs</p>
+                          </td>
+                          <td className="p-3 max-w-[200px] truncate">
+                            <p className="truncate font-medium text-slate-700">{ev.location}</p>
+                            <p className="text-[11px] text-blue-600">{ev.isVirtual ? 'Virtual' : 'Presencial'}</p>
+                          </td>
+                          <td className="p-3 whitespace-nowrap">
+                            {ev.isPublic ? (
+                              <span className="px-2 py-0.5 rounded bg-emerald-50 text-emerald-800 border border-emerald-200 text-[10px] font-bold">
+                                Público
+                              </span>
+                            ) : (
+                              <span className="px-2 py-0.5 rounded bg-amber-50 text-amber-800 border border-amber-200 text-[10px] font-bold flex items-center gap-1 w-fit">
+                                <Lock className="w-2.5 h-2.5" />
+                                <span>{ev.accessCode}</span>
+                              </span>
+                            )}
+                          </td>
+                          <td className="p-3">
+                            {ev.hasImage ? (
+                              <span className="text-[10px] bg-blue-50 text-blue-800 font-semibold px-2 py-0.5 rounded border border-blue-200">
+                                Con Imagen
+                              </span>
+                            ) : (
+                              <span className="text-[10px] bg-slate-100 text-slate-600 font-semibold px-2 py-0.5 rounded">
+                                Sin Imagen
+                              </span>
+                            )}
+                          </td>
+                          <td className="p-3 text-right whitespace-nowrap">
+                            <div className="flex items-center justify-end gap-1.5">
+                              <button
+                                onClick={() => handleOpenEditEvent(ev)}
+                                className="p-1.5 rounded-lg bg-blue-50 text-blue-700 hover:bg-blue-100"
+                                title="Editar Evento"
+                              >
+                                <Edit2 className="w-3.5 h-3.5" />
+                              </button>
+                              <button
+                                onClick={() => handleDeleteEvent(ev.id)}
+                                className="p-1.5 rounded-lg bg-rose-50 text-rose-700 hover:bg-rose-100"
+                                title="Eliminar Evento"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
@@ -884,19 +946,31 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
             <div className="space-y-5">
               <div className="bg-white p-4 rounded-xl border border-slate-200 flex flex-col md:flex-row md:items-center justify-between gap-4">
                 <div className="flex-1 max-w-md">
-                  <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
-                    Seleccionar Evento para Reportes:
-                  </label>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider">
+                      Seleccionar Evento para Reportes:
+                    </label>
+                    {events.find(e => e.id === selectedEventId) && (
+                      <span className={`text-[10px] font-black uppercase px-2 py-0.5 rounded border shadow-2xs ${
+                        getStatusConfig(events.find(e => e.id === selectedEventId)!.status).badgeColor
+                      }`}>
+                        {getStatusConfig(events.find(e => e.id === selectedEventId)!.status).badgeLabel}
+                      </span>
+                    )}
+                  </div>
                   <select
                     value={selectedEventId}
                     onChange={(e) => setSelectedEventId(e.target.value)}
                     className="w-full px-3 py-2 text-sm rounded-lg border border-slate-300 bg-white font-semibold text-slate-800 focus:ring-2 focus:ring-blue-600"
                   >
-                    {events.map(ev => (
-                      <option key={ev.id} value={ev.id}>
-                        {ev.title} ({ev.date})
-                      </option>
-                    ))}
+                    {events.map(ev => {
+                      const cfg = getStatusConfig(ev.status);
+                      return (
+                        <option key={ev.id} value={ev.id}>
+                          [{cfg.badgeLabel}] {ev.title} ({ev.date})
+                        </option>
+                      );
+                    })}
                   </select>
                 </div>
 
@@ -1425,6 +1499,41 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                     />
                   </div>
                 )}
+              </div>
+
+              {/* Event Status Selector: SOLD OUT, SUSPENDIDO, PROXIMAMENTE, DISPONIBLE, PASADO */}
+              <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-200 space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <label className="block font-bold text-slate-800 text-xs uppercase tracking-wider">
+                    Estado del Evento:
+                  </label>
+                  <span className={`text-[10px] font-black uppercase px-2.5 py-0.5 rounded border shadow-2xs ${getStatusConfig(eventFormData.status).badgeColor}`}>
+                    {getStatusConfig(eventFormData.status).badgeLabel}
+                  </span>
+                </div>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                  {EVENT_STATUS_OPTIONS.map((opt) => {
+                    const isSelected = normalizeEventStatus(eventFormData.status) === opt.value;
+                    return (
+                      <button
+                        key={opt.value}
+                        type="button"
+                        onClick={() => setEventFormData({ ...eventFormData, status: opt.value })}
+                        className={`p-2 rounded-lg border text-left text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+                          isSelected
+                            ? 'bg-blue-900 text-white border-blue-900 shadow-xs ring-2 ring-blue-500/30'
+                            : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-100 hover:border-slate-400'
+                        }`}
+                      >
+                        <span className="text-sm">{opt.icon}</span>
+                        <span className="truncate">{opt.label}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+                <p className="text-[11px] text-slate-600">
+                  {EVENT_STATUS_OPTIONS.find(o => o.value === normalizeEventStatus(eventFormData.status))?.description}
+                </p>
               </div>
 
               <div className="flex justify-end gap-2 pt-3 border-t border-slate-200">

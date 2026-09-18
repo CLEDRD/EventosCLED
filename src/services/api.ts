@@ -1,5 +1,6 @@
-import { CLEDEvent, Attendee } from '../types';
+import { CLEDEvent, Attendee, EventStatus } from '../types';
 import { supabase, eventFromRow, eventToRow, attendeeFromRow, attendeeToRow, emailLogFromRow } from '../lib/supabase';
+import { statusToLegacySupabase, encodeStatusInDescription } from '../utils/eventStatus';
 
 // Initial fallback event if both backend API and Supabase network fail
 const FALLBACK_EVENTS: CLEDEvent[] = [
@@ -140,6 +141,22 @@ export async function registerAttendee(
     accessCode?: string;
   }
 ): Promise<{ success: boolean; attendee?: any; message?: string }> {
+  // Pre-validate event status
+  const normStatus = (event.status || 'DISPONIBLE').toUpperCase();
+  if (normStatus !== 'ACTIVE' && normStatus !== 'DISPONIBLE') {
+    let msg = 'Este evento no está admitiendo inscripciones.';
+    if (normStatus === 'SOLD OUT') {
+      msg = 'Las boletas para este evento están agotadas (SOLD OUT).';
+    } else if (normStatus === 'SUSPENDIDO' || normStatus === 'SUPENSDIDO') {
+      msg = 'Este evento se encuentra temporalmente suspendido.';
+    } else if (normStatus === 'PROXIMAMENTE') {
+      msg = 'Las inscripciones para este evento estarán abiertas próximamente.';
+    } else if (normStatus === 'PASADO' || normStatus === 'COMPLETED') {
+      msg = 'Este evento ya ha finalizado.';
+    }
+    return { success: false, message: msg };
+  }
+
   // 1. Try backend API first
   const apiResult = await safeFetchJson<{ success: boolean; attendee: any; message?: string }>(
     `/api/events/${event.id}/register`,
@@ -559,7 +576,7 @@ export async function saveEventRecord(
         isPublic: eventData.isPublic !== undefined ? eventData.isPublic : true,
         accessCode: eventData.accessCode || undefined,
         capacity: Number(eventData.capacity) || 150,
-        status: eventData.status || 'active',
+        status: eventData.status || 'DISPONIBLE',
         speaker: eventData.speaker || undefined,
         speakerRole: eventData.speakerRole || undefined,
         createdAt: eventData.createdAt || nowIso,
@@ -580,6 +597,79 @@ export async function saveEventRecord(
   }
 
   return { success: false, message: 'No se pudo guardar el evento.' };
+}
+
+/**
+ * Changes an event's status to DISPONIBLE, SOLD OUT, SUSPENDIDO, PROXIMAMENTE or PASADO.
+ * Works seamlessly in both backend environment and direct Supabase (GitHub Pages).
+ */
+export async function updateEventStatus(
+  eventId: string,
+  newStatus: EventStatus,
+  adminToken?: string
+): Promise<{ success: boolean; message?: string }> {
+  // 1. Try backend API if admin token is present
+  if (adminToken) {
+    const apiResult = await safeFetchJson<{ success: boolean; event: CLEDEvent; message?: string }>(
+      `/api/events/${eventId}/status`,
+      {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-admin-token': adminToken
+        },
+        body: JSON.stringify({ status: newStatus })
+      }
+    );
+    if (apiResult.ok && apiResult.data?.success) {
+      return { success: true, message: apiResult.data.message };
+    }
+  }
+
+  // 2. Direct Supabase update (for GitHub Pages static hosting or direct DB sync)
+  if (supabase) {
+    try {
+      // First attempt: direct update on status column
+      const { error } = await supabase
+        .from('events')
+        .update({
+          status: newStatus,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', eventId);
+
+      if (!error) {
+        return { success: true, message: `Estado actualizado a ${newStatus}.` };
+      }
+
+      // If Supabase table has the check constraint events_status_check
+      if (error.message?.includes('events_status_check') || error.code === '23514') {
+        const legacyStatus = statusToLegacySupabase(newStatus);
+        const { data: evData } = await supabase.from('events').select('description').eq('id', eventId).maybeSingle();
+        const fallbackDesc = encodeStatusInDescription(newStatus, evData?.description);
+
+        const { error: fbErr } = await supabase
+          .from('events')
+          .update({
+            status: legacyStatus,
+            description: fallbackDesc,
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', eventId);
+
+        if (!fbErr) {
+          return { success: true, message: `Estado actualizado a ${newStatus} con compatibilidad de base de datos.` };
+        }
+        return { success: false, message: fbErr.message };
+      }
+
+      return { success: false, message: error.message };
+    } catch (err: any) {
+      return { success: false, message: sanitizeUserErrorMessage(err) };
+    }
+  }
+
+  return { success: false, message: 'No se pudo actualizar el estado del evento.' };
 }
 
 /**

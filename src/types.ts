@@ -1,3 +1,13 @@
+export type EventStatus = 
+  | 'DISPONIBLE' 
+  | 'SOLD OUT' 
+  | 'SUSPENDIDO' 
+  | 'PROXIMAMENTE' 
+  | 'PASADO' 
+  | 'active' 
+  | 'completed' 
+  | 'cancelled';
+
 export interface CLEDEvent {
   id: string;
   title: string;
@@ -13,7 +23,7 @@ export interface CLEDEvent {
   isPublic: boolean;
   accessCode?: string; // For private events
   capacity: number; // 0 for unlimited
-  status: 'active' | 'completed' | 'cancelled';
+  status: EventStatus;
   speaker?: string;
   speakerRole?: string;
   createdAt: string;
